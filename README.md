@@ -18,15 +18,15 @@ flowchart TD
 
   BROWSER["Browser: Chime JS SDK + mic"] --> ROOM
 
-  ROOM -->|POST /rooms/{id}/join| APIGW["API Gateway (HTTP API)"]
-  IDX  -->|POST /rooms (X-Admin-Key)| APIGW
+  ROOM --> APIGW["API Gateway (HTTP API)"]
+  IDX  --> APIGW
 
   APIGW --> LROOMS["Lambda: rooms"]
   APIGW --> LJOIN["Lambda: join"]
 
-  LROOMS --> DDB["DynamoDB: rooms, invites + TTL"]
+  LROOMS --> DDB["DynamoDB (rooms, invites + TTL)"]
   LJOIN  --> DDB
-  LJOIN  --> CHIME["Amazon Chime SDK Meetings: Create/Get Meeting, Create Attendee"]
+  LJOIN  --> CHIME["Amazon Chime SDK Meetings"]
 
 ```
 
