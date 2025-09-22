@@ -10,45 +10,31 @@ Minimal, production-ready 1:1 audio calling MVP built with **Amazon Chime SDK Me
 
 ## Architecture
 
-flowchart LR
-  subgraph Frontend [Static Frontend]
-    S3[S3 (static)]
-    CF[CloudFront (HTTPS)]
-    S3 --> CF
-    CF --> IDX[index.html (admin)]
-    CF --> ROOM[room.html (join)]
-  end
+                 +---------------------------+
+                 |        CloudFront         |
+                 |       (HTTPS / CDN)       |
+                 +-------------+-------------+
+                               |
+                               v
++----------------+     +----------------+     +-----------------------------+
+|      S3        | --> |  index.html    | --> |  Admin (create room/links) |
+| (static site)  |     |  room.html     |     |  Room (pre-join / join)    |
++----------------+     +----------------+     +-----------------------------+
 
-  subgraph Browser [Browser]
-    SDK[Chime JS SDK + mic perms]
-  end
-
-  subgraph Serverless [Serverless API]
-    APIGW[API Gateway (HTTP API)]
-    L_rooms[Lambda: rooms]
-    L_join[Lambda: join]
-    DDB[(DynamoDB\nrooms, invites+TTL)]
-  end
-
-  subgraph Media [Media Backend]
-    CHIME[Amazon Chime SDK Meetings\n(Create/Get Meeting, Create Attendee)]
-  end
-
-  SDK --> APIGW
-  IDX --> APIGW
-  ROOM --> SDK
-
-  APIGW --> L_rooms
-  APIGW --> L_join
-  L_rooms --> DDB
-  L_join --> DDB
-  L_join --> CHIME
-
-
-**Key points**
-- No SFU to operate; Chime media is managed by AWS
-- Serverless pay-per-use for API + DB
-- JWT invites (HS256), Admin API key, CORS locked to CloudFront domain
+Browser (Chime JS SDK, mic)
+          |
+          v
++--------------------+          +----------------+          +---------------------+
+|  API Gateway (HTTP)|  --->    |    Lambda      |  --->    |     DynamoDB        |
+|      /rooms        |          |   rooms/join   |          | rooms / invites+TTL |
++--------------------+          +----------------+          +---------------------+
+                                         |
+                                         v
+                              +---------------------------+
+                              | Amazon Chime SDK Meetings |
+                              |  Create/Get Meeting,      |
+                              |  Create Attendee          |
+                              +---------------------------+
 
 ---
 
