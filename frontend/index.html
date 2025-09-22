@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chime Audio — Admin</title>
+  <style>
+    :root{--border:#e5e7eb;--muted:#6b7280;--ok:#16a34a;--err:#b91c1c}
+    body{font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding:0 1rem}
+    h1{margin:0 0 1rem}
+    .row{display:flex; gap:.5rem; align-items:center; flex-wrap:wrap}
+    input,button{font-size:1rem; padding:.6rem .8rem}
+    input{flex:1; min-width:12rem}
+    .card{border:1px solid var(--border); border-radius:12px; padding:1rem; margin:.75rem 0}
+    code{background:#f6f8fa; padding:.1rem .3rem; border-radius:6px}
+    .links a{word-break: break-all}
+    .muted{color:var(--muted)}
+    .ok{color:var(--ok)}
+    .err{color:var(--err)}
+  </style>
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <h1>Create a room</h1>
+
+  <div class="card">
+    <div class="row">
+      <label for="adminKey">Admin Key:</label>
+      <input id="adminKey" type="password" placeholder="enter AdminApiKey" />
+      <button id="createBtn">Create</button>
+    </div>
+    <div class="row" style="margin-top:.5rem">
+      <label for="ttl">Invite TTL (min):</label>
+      <input id="ttl" type="number" value="45" style="width:7rem" />
+      <span class="muted">How long invite links remain valid.</span>
+    </div>
+    <div class="row" style="margin-top:.5rem">
+      <label for="roomTtl">Room TTL (days):</label>
+      <input id="roomTtl" type="number" value="1" style="width:7rem" />
+      <span class="muted">When the room will be auto-deleted (info only).</span>
+    </div>
+    <div class="muted" style="margin-top:.5rem">
+      Tip: open the admin over HTTPS (CloudFront) or via <code>localhost</code>.
+    </div>
+  </div>
+
+  <div id="out"></div>
+
+  <script>
+    // Replace with your API Gateway HTTP API URL (from SAM Outputs)
+    const API_BASE = "https://xxxxx.execute-api.xxxxxx.amazonaws.com";
+
+    const el = (id) => document.getElementById(id);
+    const out = (html) => el('out').innerHTML = html;
+
+    // Restore saved admin key from localStorage
+    try {
+      const saved = localStorage.getItem('chime_admin_key');
+      if (saved) el('adminKey').value = saved;
+    } catch {}
+
+    function uiBusy(b) {
+      el('createBtn').disabled = b;
+      el('createBtn').textContent = b ? 'Creating…' : 'Create';
+    }
+
+    function makeRoomLink(params){
+      // Build absolute link based on current origin (works for CloudFront/S3/localhost)
+      const u = new URL('room.html', window.location.href);
+      u.searchParams.set('room', params.roomId);
+      u.searchParams.set('t', params.token);
+      return u.href;
+    }
+
+    async function createRoom() {
+      const adminKey = (el('adminKey').value || '').trim();
+      const ttlMin = parseInt(el('ttl').value || '45', 10);
+      const roomTtlDays = parseInt(el('roomTtl').value || '1', 10);
+
+      if (!adminKey) { alert('Enter Admin Key'); el('adminKey').focus(); return; }
+
+      uiBusy(true);
+      out('<div class="card muted">Creating…</div>');
+
+      try {
+        // Save key locally for convenience
+        try { localStorage.setItem('chime_admin_key', adminKey); } catch {}
+
+        const r = await fetch(`${API_BASE}/rooms`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Key': adminKey
+          },
+          body: JSON.stringify({ inviteMinutes: ttlMin, roomTtlDays })
+        });
+
+        if (!r.ok) {
+          const txt = await r.text().catch(()=>r.statusText);
+          throw new Error(`HTTP ${r.status}: ${txt}`);
+        }
+
+        // Expect: { roomId, invites: { host:{token}, guest:{token} } }
+        const data = await r.json();
+
+        const hostUrl = makeRoomLink({ roomId: data.roomId, token: data.invites.host.token });
+        const guestUrl = makeRoomLink({ roomId: data.roomId, token: data.invites.guest.token });
+
+        out(`
+          <div class="card">
+            <div><b>Room:</b> <code>${data.roomId}</code></div>
+            <div class="links" style="margin-top:.75rem">
+              <div><b>Host link:</b></div>
+              <div class="row" style="gap:.25rem">
+                <a id="hostA" href="${hostUrl}" target="_blank" rel="noopener">${hostUrl}</a>
+                <button data-copy="hostA">Copy</button>
+              </div>
+              <div style="margin-top:.75rem"><b>Guest link:</b></div>
+              <div class="row" style="gap:.25rem">
+                <a id="guestA" href="${guestUrl}" target="_blank" rel="noopener">${guestUrl}</a>
+                <button data-copy="guestA">Copy</button>
+              </div>
+            </div>
+            <div class="muted" style="margin-top:.75rem">
+              Links expire in <b>${ttlMin}</b> min. Room will be deleted in ~<b>${roomTtlDays}</b> day(s).
+            </div>
+          </div>
+        `);
+
+        // Copy buttons
+        document.querySelectorAll('button[data-copy]').forEach(btn=>{
+          btn.onclick = async ()=>{
+            const id = btn.getAttribute('data-copy');
+            const href = document.getElementById(id).href;
+            try {
+              await navigator.clipboard.writeText(href);
+              btn.textContent='Copied';
+              setTimeout(()=>btn.textContent='Copy', 1200);
+            } catch {
+              alert('Copy manually: ' + href);
+            }
+          };
+        });
+
+      } catch (e) {
+        out(`<div class="card err"><b>Error:</b> ${e.message || e}</div>`);
+      } finally {
+        uiBusy(false);
+      }
+    }
+
+    el('createBtn').addEventListener('click', createRoom);
+  </script>
+</body>
+</html>
