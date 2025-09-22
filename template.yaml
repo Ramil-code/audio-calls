@@ -1,0 +1,188 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Secure 1:1 audio app using Amazon Chime SDK Meetings + Serverless backend
+
+Parameters:
+  MediaRegion:
+    Type: String
+    Default: eu-central-1
+    Description: Chime MediaRegion (closest to users)
+  JwtSecret:
+    Type: String
+    NoEcho: true
+    Description: HS256 secret for signing invite tokens (provide a strong random string)
+  AdminApiKey:
+    Type: String
+    NoEcho: true
+    Description: Admin key required to create rooms via /rooms
+  InviteTTLMinutes:
+    Type: Number
+    Default: 45
+  RoomTTLDays:
+    Type: Number
+    Default: 1
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 15
+    MemorySize: 256
+    Tracing: Active
+    Environment:
+      Variables:
+        TABLE_ROOMS: !Ref RoomsTable
+        TABLE_INVITES: !Ref InvitesTable
+        MEDIA_REGION: !Ref MediaRegion
+        JWT_SECRET: !Ref JwtSecret
+        ADMIN_API_KEY: !Ref AdminApiKey
+
+Resources:
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods: [ GET, POST, OPTIONS ]
+        AllowHeaders: [ Content-Type, Authorization, X-Admin-Key ]
+
+  RoomsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/
+      Handler: rooms.handler
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:Query
+                - dynamodb:Scan
+              Resource:
+                - !GetAtt RoomsTable.Arn
+                - !GetAtt InvitesTable.Arn
+            - Effect: Allow
+              Action:
+                - chime:CreateMeeting
+                - chime:CreateAttendee
+                - chime:GetMeeting
+                - chime:GetAttendee
+                - chime:DeleteMeeting
+                - chime:ListAttendees
+              Resource: "*"
+      Events:
+        CreateRoom:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /rooms
+            Method: POST
+
+  JoinFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/
+      Handler: join.handler
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:Query
+                - dynamodb:Scan
+              Resource:
+                - !GetAtt RoomsTable.Arn
+                - !GetAtt InvitesTable.Arn
+            - Effect: Allow
+              Action:
+                - chime:CreateMeeting
+                - chime:CreateAttendee
+                - chime:GetMeeting
+                - chime:GetAttendee
+                - chime:DeleteMeeting
+                - chime:ListAttendees
+              Resource: "*"
+      Events:
+        JoinRoom:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /rooms/{roomId}/join
+            Method: POST
+
+  RoomsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: roomId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: roomId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  InvitesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: inviteId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: inviteId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  WebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+
+  WebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicRead
+            Effect: Allow
+            Principal: '*'
+            Action:
+              - s3:GetObject
+            Resource: !Sub "${WebsiteBucket.Arn}/*"
+
+Outputs:
+  HttpApiUrl:
+    Description: Base URL for the HTTP API
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+
+  WebsiteBucketName:
+    Description: Name of the S3 Website bucket
+    Value: !Ref WebsiteBucket
+
+  WebsiteBucketWebsiteURL:
+    Description: Public website URL of the S3 bucket
+    Value: !GetAtt WebsiteBucket.WebsiteURL
