@@ -10,6 +10,7 @@ Minimal, production-ready 1:1 audio calling MVP built with **Amazon Chime SDK Me
 
 ## Architecture
 
+```merimaid
 flowchart TD
   %% ===== Frontend hosting =====
   S3[(S3<br/>(static site))] --> CF[CloudFront<br/>(HTTPS/CDN)]
@@ -30,6 +31,7 @@ flowchart TD
   LROOMS --> DDB[(DynamoDB<br/>rooms, invites + TTL)]
   LJOIN  --> DDB
   LJOIN  --> CHIME[Amazon Chime SDK Meetings<br/>Create/Get Meeting · Create Attendee]
+```
 
 ---
 
