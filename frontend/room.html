@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chime Room</title>
+  <!-- Local bundled SDK -->
+  <script src="vendor/amazon-chime-sdk.min.js"></script>
+  <style>
+    body{font-family: system-ui, sans-serif; max-width: 800px; margin:2rem auto; padding:0 1rem}
+    .card{border:1px solid #ddd; border-radius:12px; padding:1rem; margin:1rem 0}
+    select,button{font-size:1rem; padding:.6rem .8rem}
+    .row{display:flex; gap:.75rem; align-items:center; flex-wrap:wrap}
+    .vu{height:8px; background:#eee; border-radius:4px; overflow:hidden}
+    .bar{height:100%; width:0; background:#3b82f6}
+    code{background:#f6f8fa; padding:.1rem .3rem; border-radius:6px}
+  </style>
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <h1>Room</h1>
+
+  <div id="pre" class="card">
+    <div id="roomInfo"></div>
+    <div class="row" style="margin-top:.5rem">
+      <label>Microphone:</label>
+      <select id="micSel"></select>
+      <button id="testBtn">Test</button>
+    </div>
+    <div class="vu"><div id="bar" class="bar"></div></div>
+    <div style="margin-top:1rem" class="row">
+      <button id="joinBtn">Join</button>
+      <span id="status" style="color:#b00"></span>
+    </div>
+  </div>
+
+  <div id="inCall" class="card" style="display:none">
+    <div class="row">
+      <button id="muteBtn">Mute</button>
+      <button id="leaveBtn">Leave</button>
+      <span id="inCallStatus"></span>
+    </div>
+  </div>
+
+<script>
+  if (!window.ChimeSDK) {
+    document.getElementById('status').textContent = 'ChimeSDK did not load (vendor/amazon-chime-sdk.min.js)';
+    throw new Error('ChimeSDK not loaded');
+  }
+
+  // Replace with your API Gateway HTTP API URL
+  const API_BASE = "https://xxxxx.execute-api.xxxxx.amazonaws.com";
+  const params = new URLSearchParams(location.search);
+  const roomId = params.get('room');
+  const token  = params.get('t');
+  document.getElementById('roomInfo').innerHTML = `Room: <code>${roomId||'-'}</code>`;
+
+  const { ConsoleLogger, LogLevel, DefaultDeviceController, DefaultMeetingSession, MeetingSessionConfiguration } = window.ChimeSDK;
+  const logger = new ConsoleLogger('SDK', LogLevel.INFO);
+  const deviceController = new DefaultDeviceController(logger);
+
+  let meetingSession, selectedMic, muted = false, previewStream;
+  const status = (t)=> document.getElementById('status').textContent = t || '';
+  const inStatus = (t)=> document.getElementById('inCallStatus').textContent = t || '';
+
+  async function ensureMicPermission() {
+    try { previewStream = await navigator.mediaDevices.getUserMedia({ audio: true }); return true; }
+    catch (e) { status('No microphone access: ' + e.message); return false; }
+  }
+  async function listMics(){
+    const sel = document.getElementById('micSel'); sel.innerHTML = '';
+    const devs = await deviceController.listAudioInputDevices();
+    devs.forEach(d=>{
+      const o=document.createElement('option');
+      o.value=d.deviceId || 'default';
+      o.textContent=d.label || d.deviceId || 'Default microphone';
+      sel.appendChild(o);
+    });
+    if (devs.length) selectedMic = devs[0].deviceId || 'default';
+    sel.onchange = ()=> selectedMic = sel.value;
+    if (!devs.length) status('No audio devices found. Allow mic access and use HTTPS/localhost.');
+  }
+  function startVU(stream){
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const src = ctx.createMediaStreamSource(stream);
+    const an = ctx.createAnalyser(); an.fftSize = 512; src.connect(an);
+    const data = new Uint8Array(an.frequencyBinCount);
+    const bar = document.getElementById('bar');
+    (function tick(){
+      an.getByteTimeDomainData(data);
+      let sum = 0; for(let i=0;i<data.length;i++){ const v=(data[i]-128)/128; sum += v*v; }
+      const rms = Math.sqrt(sum/data.length);
+      bar.style.width = Math.min(100, Math.round(rms*140))+'%';
+      requestAnimationFrame(tick);
+    })();
+  }
+
+  document.getElementById('testBtn').onclick = async ()=>{
+    status('Requesting microphone access…');
+    const ok = await ensureMicPermission();
+    if (!ok) return;
+    status('Microphone OK'); startVU(previewStream);
+    await listMics();
+  };
+
+  document.getElementById('joinBtn').onclick = async ()=>{
+    if(!roomId || !token){ status('Invalid link'); return; }
+    const ok = previewStream ? true : await ensureMicPermission();
+    if (!ok) return;
+    if (!selectedMic) await listMics();
+    try{
+      status('Connecting…');
+      const r = await fetch(`${API_BASE}/rooms/${encodeURIComponent(roomId)}/join`, {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ t: token })
+      });
+      if(!r.ok){ throw new Error(await r.text()); }
+      const data = await r.json();
+
+      const config = new MeetingSessionConfiguration(data.meeting, data.attendee);
+      meetingSession = new DefaultMeetingSession(config, logger, deviceController);
+
+      await meetingSession.audioVideo.startAudioInput(selectedMic || 'default');
+
+      const audioEl = new Audio(); audioEl.autoplay = true;
+      meetingSession.audioVideo.bindAudioElement(audioEl);
+      meetingSession.audioVideo.start();
+
+      document.getElementById('pre').style.display='none';
+      document.getElementById('inCall').style.display='block';
+      inStatus('Connected');
+    } catch(e){ status('Error: '+(e?.message||e)); }
+  };
+
+  document.getElementById('muteBtn').onclick = ()=>{
+    if (!meetingSession) return;
+    muted = !muted;
+    meetingSession.audioVideo.realtimeSetLocalAudioInputMute(muted);
+    document.getElementById('muteBtn').textContent = muted ? 'Unmute' : 'Mute';
+    inStatus(muted ? 'You are muted' : 'Microphone is on');
+  };
+
+  document.getElementById('leaveBtn').onclick = ()=>{
+    try{ meetingSession && meetingSession.audioVideo.stop(); }catch(e){}
+    location.href = './index.html';
+  };
+
+  // On HTTPS/localhost — prefetch mic permission and device list
+  (async()=>{ try{ await ensureMicPermission(); await listMics(); } catch(e){} })();
+</script>
+</body>
+</html>
