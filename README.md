@@ -10,7 +10,7 @@ Minimal, production-ready 1:1 audio calling MVP built with **Amazon Chime SDK Me
 
 ## Architecture
 
-```merimaid
+```mermaid
 flowchart TD
   %% ===== Frontend hosting =====
   S3[(S3<br/>(static site))] --> CF[CloudFront<br/>(HTTPS/CDN)]
