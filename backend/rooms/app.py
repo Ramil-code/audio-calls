@@ -10,7 +10,6 @@ invites_table = ddb.Table(os.environ['TABLE_INVITES'])
 JWT_SECRET = os.environ['JWT_SECRET']
 ADMIN_API_KEY = os.environ['ADMIN_API_KEY']
 
-# Значения по умолчанию; можно переопределить, передав в body {"inviteMinutes": 60}
 INVITE_TTL_MINUTES_DEFAULT = int(os.getenv('InviteTTLMinutes', '45'))
 ROOM_TTL_DAYS_DEFAULT = int(os.getenv('RoomTTLDays', '1'))
 
@@ -22,7 +21,7 @@ def _new_invite(room_id: str, role: str, invite_minutes: int):
     now = int(time.time())
     invite_id = _short_id(12)
     exp = now + invite_minutes * 60
-    ttl = exp + 3600  # небольшой запас после истечения
+    ttl = exp + 3600  
     invites_table.put_item(Item={
         'inviteId': invite_id,
         'roomId': room_id,
@@ -40,7 +39,6 @@ def _new_invite(room_id: str, role: str, invite_minutes: int):
     return {'inviteId': invite_id, 'token': token, 'exp': exp}
 
 def handler(event, context):
-    # Простейшая админ-аутентификация по заголовку (MVP)
     admin_key = event.get('headers', {}).get('X-Admin-Key') or event.get('headers', {}).get('x-admin-key')
     if not admin_key or admin_key != ADMIN_API_KEY:
         return {"statusCode": 401, "body": "Unauthorized"}
@@ -57,7 +55,6 @@ def handler(event, context):
     room_id = _short_id(10)
     room_ttl = now + room_ttl_days * 86400
 
-    # Создаём комнату (meetingId появится при первом join)
     rooms_table.put_item(Item={
         'roomId': room_id,
         'status': 'active',
@@ -65,7 +62,6 @@ def handler(event, context):
         'ttl': room_ttl,
     })
 
-    # Два приглашения: host и guest
     host_inv = _new_invite(room_id, 'host', invite_minutes)
     guest_inv = _new_invite(room_id, 'guest', invite_minutes)
 
