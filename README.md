@@ -10,31 +10,26 @@ Minimal, production-ready 1:1 audio calling MVP built with **Amazon Chime SDK Me
 
 ## Architecture
 
-                 +---------------------------+
-                 |        CloudFront         |
-                 |       (HTTPS / CDN)       |
-                 +-------------+-------------+
-                               |
-                               v
-+----------------+     +----------------+     +-----------------------------+
-|      S3        | --> |  index.html    | --> |  Admin (create room/links) |
-| (static site)  |     |  room.html     |     |  Room (pre-join / join)    |
-+----------------+     +----------------+     +-----------------------------+
+flowchart TD
+  %% ===== Frontend hosting =====
+  S3[(S3<br/>(static site))] --> CF[CloudFront<br/>(HTTPS/CDN)]
+  CF --> IDX[index.html<br/>(Admin)]
+  CF --> ROOM[room.html<br/>(Join)]
 
-Browser (Chime JS SDK, mic)
-          |
-          v
-+--------------------+          +----------------+          +---------------------+
-|  API Gateway (HTTP)|  --->    |    Lambda      |  --->    |     DynamoDB        |
-|      /rooms        |          |   rooms/join   |          | rooms / invites+TTL |
-+--------------------+          +----------------+          +---------------------+
-                                         |
-                                         v
-                              +---------------------------+
-                              | Amazon Chime SDK Meetings |
-                              |  Create/Get Meeting,      |
-                              |  Create Attendee          |
-                              +---------------------------+
+  %% ===== Browser =====
+  BROWSER[Browser<br/>Chime JS SDK + mic perms]
+  BROWSER --> ROOM
+
+  %% ===== API =====
+  ROOM -->|POST /rooms/{id}/join| APIGW[API Gateway<br/>(HTTP API)]
+  IDX  -->|POST /rooms (X-Admin-Key)| APIGW
+
+  APIGW --> LROOMS[Lambda: rooms]
+  APIGW --> LJOIN[Lambda: join]
+
+  LROOMS --> DDB[(DynamoDB<br/>rooms, invites + TTL)]
+  LJOIN  --> DDB
+  LJOIN  --> CHIME[Amazon Chime SDK Meetings<br/>Create/Get Meeting · Create Attendee]
 
 ---
 
