@@ -12,25 +12,22 @@ Minimal, production-ready 1:1 audio calling MVP built with **Amazon Chime SDK Me
 
 ```mermaid
 flowchart TD
-  %% ===== Frontend hosting =====
-  S3[(S3<br/>(static site))] --> CF[CloudFront<br/>(HTTPS/CDN)]
-  CF --> IDX[index.html<br/>(Admin)]
-  CF --> ROOM[room.html<br/>(Join)]
+  S3["S3 (static site)"] --> CF["CloudFront (HTTPS/CDN)"]
+  CF --> IDX["index.html (Admin)"]
+  CF --> ROOM["room.html (Join)"]
 
-  %% ===== Browser =====
-  BROWSER[Browser<br/>Chime JS SDK + mic perms]
-  BROWSER --> ROOM
+  BROWSER["Browser: Chime JS SDK + mic"] --> ROOM
 
-  %% ===== API =====
-  ROOM -->|POST /rooms/{id}/join| APIGW[API Gateway<br/>(HTTP API)]
+  ROOM -->|POST /rooms/{id}/join| APIGW["API Gateway (HTTP API)"]
   IDX  -->|POST /rooms (X-Admin-Key)| APIGW
 
-  APIGW --> LROOMS[Lambda: rooms]
-  APIGW --> LJOIN[Lambda: join]
+  APIGW --> LROOMS["Lambda: rooms"]
+  APIGW --> LJOIN["Lambda: join"]
 
-  LROOMS --> DDB[(DynamoDB<br/>rooms, invites + TTL)]
+  LROOMS --> DDB["DynamoDB: rooms, invites + TTL"]
   LJOIN  --> DDB
-  LJOIN  --> CHIME[Amazon Chime SDK Meetings<br/>Create/Get Meeting · Create Attendee]
+  LJOIN  --> CHIME["Amazon Chime SDK Meetings: Create/Get Meeting, Create Attendee"]
+
 ```
 
 ---
