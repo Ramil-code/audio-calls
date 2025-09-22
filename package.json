@@ -1,0 +1,18 @@
+{
+  "name": "chime-audio-mvp",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "esbuild": "^0.25.9"
+  },
+  "dependencies": {
+    "amazon-chime-sdk-js": "^3.28.0"
+  }
+}
