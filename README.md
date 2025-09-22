@@ -10,13 +10,40 @@ Minimal, production-ready 1:1 audio calling MVP built with **Amazon Chime SDK Me
 
 ## Architecture
 
-```text
-S3 (static) -- CloudFront (HTTPS) --> index.html / room.html
-                                         |
-Browser (Chime JS SDK, mic) -------------+----> API Gateway (HTTP API)
-/rooms (admin key)  -> Lambda (rooms) -> DynamoDB (rooms, invites + TTL)
-/rooms/{id}/join -> Lambda (join) -----> Amazon Chime SDK Meetings (Create/Get/Attendee)
-```
+flowchart LR
+  subgraph Frontend [Static Frontend]
+    S3[S3 (static)]
+    CF[CloudFront (HTTPS)]
+    S3 --> CF
+    CF --> IDX[index.html (admin)]
+    CF --> ROOM[room.html (join)]
+  end
+
+  subgraph Browser [Browser]
+    SDK[Chime JS SDK + mic perms]
+  end
+
+  subgraph Serverless [Serverless API]
+    APIGW[API Gateway (HTTP API)]
+    L_rooms[Lambda: rooms]
+    L_join[Lambda: join]
+    DDB[(DynamoDB\nrooms, invites+TTL)]
+  end
+
+  subgraph Media [Media Backend]
+    CHIME[Amazon Chime SDK Meetings\n(Create/Get Meeting, Create Attendee)]
+  end
+
+  SDK --> APIGW
+  IDX --> APIGW
+  ROOM --> SDK
+
+  APIGW --> L_rooms
+  APIGW --> L_join
+  L_rooms --> DDB
+  L_join --> DDB
+  L_join --> CHIME
+
 
 **Key points**
 - No SFU to operate; Chime media is managed by AWS
